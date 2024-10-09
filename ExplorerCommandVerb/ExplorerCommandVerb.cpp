@@ -75,9 +75,50 @@ public:
 
 	IFACEMETHODIMP GetIcon(IShellItemArray* /* psiItemArray */, LPWSTR* ppszIcon)
 	{
-		// the icon ref ("dll,-<resid>") is provied here, in this case none is provieded
-		*ppszIcon = NULL;
-		return E_NOTIMPL;
+			HKEY hKey;
+			LPCWSTR keyPath = L"SOFTWARE\\Classes\\Local Settings\\Software\\Microsoft\\Windows\\CurrentVersion\\AppModel\\PackageRepository\\Packages";
+		
+			// Open the key for reading
+			if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, keyPath, 0, KEY_READ, &hKey) != ERROR_SUCCESS) {
+				std::cerr << "Failed to open registry key." << std::endl;
+				return E_NOTIMPL;
+			}
+			std::wstring subkeyNameToFind = L"App";
+			std::wstring subkeyNameToExclude = L"neutral";
+			std::wstring retValue = L"";
+			WCHAR subkeyName[MAX_PATH];
+			WCHAR value[MAX_PATH];
+			DWORD index = 0;
+		
+			// Enumerate the subkeys to find the one starting with "abc_"
+			while (RegEnumKey(hKey, index, subkeyName, MAX_PATH) != ERROR_NO_MORE_ITEMS) {
+				std::wstring subkey(subkeyName);
+				if ((subkey.find(subkeyNameToFind) == 0) && (subkey.find(subkeyNameToExclude) == std::wstring::npos))
+				{
+					HKEY hSubKey;
+					if (RegOpenKeyEx(hKey, subkey.c_str(), 0, KEY_READ, &hSubKey) == ERROR_SUCCESS) {
+						DWORD valueLength = MAX_PATH;
+						// Query the value named "Path"
+						if (RegQueryValueEx(hSubKey, L"Path", NULL, NULL, (LPBYTE)value, &valueLength) == ERROR_SUCCESS) {
+							std::wcout << L"Value of 'Path' under subkey '" << subkey << L"' is: " << value << std::endl;
+							//MessageBox(hwnd, value, L"ExplorerCommand Sample Verb", MB_OK);
+							retValue = value;
+						}
+						RegCloseKey(hSubKey);
+					}
+				}
+		
+				index++;
+			}
+		
+			RegCloseKey(hKey);
+			std::wstring regPath = retValue + L"\\Images\\SmallTile.scale-200.png";
+			std::filesystem::path currentPath = std::filesystem::current_path();
+			
+			iconPath = regPath;
+		
+		*ppszIcon = const_cast<LPWSTR>(iconPath.c_str());
+		return S_OK;
 	}
 
 	IFACEMETHODIMP GetToolTip(IShellItemArray* /* psiItemArray */, LPWSTR* ppszInfotip)
@@ -183,16 +224,18 @@ private:
 
 DWORD CExplorerCommandVerb::_ThreadProc()
 {
-	LPWSTR appPath = L"D:\\WpfApp1\\WpfApp1.exe";
 	STARTUPINFO si;
 	PROCESS_INFORMATION pi;
-
+	std::wstring regPath = GetPackagePath(_hwnd) + L"\\App.exe";
+	WCHAR path[MAX_PATH] = { 0 };
+	wmemcpy_s(path, MAX_PATH, regPath.c_str(), regPath.size());
+	
 	ZeroMemory(&si, sizeof(si));
 	si.cb = sizeof(si);
 	ZeroMemory(&pi, sizeof(pi));
 	bool ret = CreateProcess(
 		NULL,           // No module name (use command line)
-		appPath,        // Command line
+		path,        // Command line
 		NULL,           // Process handle not inheritable
 		NULL,           // Thread handle not inheritable
 		FALSE,          // Set handle inheritance to FALSE
@@ -202,24 +245,18 @@ DWORD CExplorerCommandVerb::_ThreadProc()
 		&si,            // Pointer to STARTUPINFO structure
 		&pi             // Pointer to PROCESS_INFORMATION structure
 	);
-	MessageBox(_hwnd, L"CreateProcess", L"OKOK", MB_OK);
+	
 	// Start the application
 	if (!ret)
 	{
-		MessageBox(_hwnd, L"err", L"Error", MB_OK);
 		std::cout << "CreateProcess failed: " << GetLastError() << std::endl;
 		return 1;
 	}
-	else
-	{
-		MessageBox(_hwnd, L"okok", L"OKOK", MB_OK);
-	}
-
-	WaitForSingleObject(pi.hProcess, INFINITE);
+	
 	// Close process and thread handles
 	CloseHandle(pi.hProcess);
 	CloseHandle(pi.hThread);
-
+	
 	return 0;
 }
 IFACEMETHODIMP CExplorerCommandVerb::Invoke(IShellItemArray* psia, IBindCtx* /* pbc */)
