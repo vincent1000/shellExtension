@@ -221,7 +221,49 @@ private:
 	HWND _hwnd;
 	IStream* _pstmShellItemArray;
 };
+std::wstring GetPackagePath(HWND hwnd)
+{
+	HKEY hKey;
+	LPCWSTR keyPath = L"SOFTWARE\\Classes\\Local Settings\\Software\\Microsoft\\Windows\\CurrentVersion\\AppModel\\PackageRepository\\Packages";
 
+	// Open the key for reading
+	if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, keyPath, 0, KEY_READ, &hKey) != ERROR_SUCCESS) {
+		std::cerr << "Failed to open registry key." << std::endl;
+		MessageBox(hwnd, L"fail open", L"ExplorerCommand Sample Verb", MB_OK);
+		return L"";
+	}
+	std::wstring subkeyNameToFind = L"App";
+	std::wstring subkeyNameToExclude = L"neutral";
+	std::wstring retValue = L"";
+	WCHAR subkeyName[MAX_PATH];
+	WCHAR value[MAX_PATH];
+	DWORD index = 0;
+
+	// Enumerate the subkeys to find the one starting with "abc_"
+	while (RegEnumKey(hKey, index, subkeyName, MAX_PATH) != ERROR_NO_MORE_ITEMS) {
+		std::wstring subkey(subkeyName);
+		if ((subkey.find(subkeyNameToFind) == 0) && (subkey.find(subkeyNameToExclude) == std::wstring::npos))
+		{
+			HKEY hSubKey;
+			if (RegOpenKeyEx(hKey, subkey.c_str(), 0, KEY_READ, &hSubKey) == ERROR_SUCCESS) {
+				DWORD valueLength = MAX_PATH;
+				// Query the value named "Path"
+				if (RegQueryValueEx(hSubKey, L"Path", NULL, NULL, (LPBYTE)value, &valueLength) == ERROR_SUCCESS) {
+					std::wcout << L"Value of 'Path' under subkey '" << subkey << L"' is: " << value << std::endl;
+					//MessageBox(hwnd, value, L"ExplorerCommand Sample Verb", MB_OK);
+					retValue = value;
+					//MessageBox(hwnd, retValue.c_str(), L"ExplorerCommand Sample Verb", MB_OK);
+				}
+				RegCloseKey(hSubKey);
+			}
+		}
+
+		index++;
+	}
+
+	RegCloseKey(hKey);
+	return retValue;
+}
 DWORD CExplorerCommandVerb::_ThreadProc()
 {
 	STARTUPINFO si;
